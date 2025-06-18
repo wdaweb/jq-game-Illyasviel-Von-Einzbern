@@ -1,0 +1,2288 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <style>
+        #game-cards {
+            width: 300px;
+        }
+
+        .card {
+            width: 50px;
+            height: 90px;
+            position: relative;
+            float: left;
+            margin: 10px;
+            /* 設定子元素在 3D 空間內 */
+            transform-style: preserve-3d;
+            transition: transform 1s;
+        }
+
+        .card-front {
+            width: 100%;
+            height: 100%;
+            /* background-image: url("https://rogeraabbccdd.github.io/F2E-book/images/ch17/1S.jpg"); */
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            position: absolute;
+            /* 隱藏背面 */
+            backface-visibility: hidden;
+        }
+
+        .card-back {
+            width: 100%;
+            height: 100%;
+            background-image: url("https://rogeraabbccdd.github.io/F2E-book/images/ch17/Red_back.jpg");
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            position: absolute;
+            transform: rotateY(180deg);
+            backface-visibility: hidden;
+        }
+
+        .card-close {
+            transform: rotateY(180deg);
+        }
+
+        #enemy-deck {
+            width: 30%;
+            border: 1px solid #000;
+            display: inline-block;
+        }
+
+        #public-deck {
+            width: 30%;
+            border: 1px solid #000;
+            display: inline-block;
+        }
+
+        #player-deck {
+            width: 30%;
+            border: 1px solid #000;
+            display: inline-block;
+        }
+
+        moon-phase {
+            width: 100px;
+            height: 100px;
+            --moon-phase-blur: 3px;
+
+            --_lat: attr(lat type(<number>), 0);
+            --_hour: attr(hour type(<number>), 12);
+            --_w: calc(100% - 1% * attr(illumination type(<number>), 0%));
+
+            --_l: calc(var(--_lat) * 1.5deg);
+            --_a: calc(((var(--_hour) - 12) * 15 * 0.7) * 1deg);
+            --_r: calc(var(--_l) + var(--_a));
+
+            aspect-ratio: 1;
+            border-radius: 50%;
+            display: block;
+            overflow: clip;
+            position: relative;
+            rotate: var(--_r, 0deg);
+        }
+
+        moon-phase::before {
+            background: url("moon.png") center / cover no-repeat;
+            content: "";
+            filter: var(--moon-phase-filter, sepia(1) grayscale(0.25));
+            inset: 0;
+            position: absolute;
+        }
+
+        moon-phase::after {
+            background-color: var(--moon-phase-mask-bg, #000);
+            border-radius: var(--_btlr, 0) var(--_btrr, 0) var(--_bbrr, 0) var(--_bblr, 0);
+            content: "";
+            filter: var(--moon-phase-mask-filter,
+                    blur(var(--moon-phase-blur, 0px)));
+            height: 100%;
+            inset-inline: var(--_ii, auto 0);
+            opacity: var(--moon-phase-mask-opacity, 0.85);
+            position: absolute;
+            width: var(--_w);
+        }
+
+        [phase*="first quarter"],
+        [phase*="waxing"] {
+            --_ii: 0 auto;
+        }
+
+        [phase*="crescent"],
+        [phase*="first quarter"],
+        [phase*="waxing"] {
+            --_bblr: 100%;
+            --_btlr: 100%;
+        }
+
+        [phase*="crescent"],
+        [phase*="last quarter"],
+        [phase*="waning"] {
+            --_btrr: 100%;
+            --_bbrr: 100%;
+        }
+
+        [phase*="gibbous"]::after {
+            border-radius: 0;
+            width: 100%;
+        }
+
+        [phase*="waxing gibbous"]::after {
+            mask: radial-gradient(circle at 100% 50%,
+                    #0000 calc(100% - var(--_w)),
+                    #000 calc(100% - var(--_w) + 1px + (2 * var(--moon-phase-blur, 0))) 100%);
+        }
+
+        [phase*="waning gibbous"]::after {
+            mask: radial-gradient(circle at 0% 50%,
+                    #0000 calc(100% - var(--_w)),
+                    #000 calc(100% - var(--_w) + 1px + (2 * var(--moon-phase-blur, 0))) 100%);
+        }
+
+        #moon {
+            position: absolute;
+            top: 0;
+            right: 0;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="game-cards"></div>
+
+    <h1>朔望月</h1>
+
+    <input type="button" value="遊戲開始" id="start" />
+    <input type="button" value="抽牌" id="draw" disabled />
+    <input type="button" value="過牌" id="check" disabled />
+    <input type="button" value="棄牌" id="fold" disabled />
+    <input type="button" value="下一局" id="next" disabled />
+
+    <br />
+
+    <div id="enemy-deck">
+        <p>莊家牌</p>
+    </div>
+
+    <br />
+
+    <div id="public-deck">
+        <p>公共牌</p>
+    </div>
+
+    <br />
+
+    <div id="player-deck">
+        <p>玩家牌</p>
+    </div>
+
+    <div id="moon"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.js"
+        integrity="sha512-+k1pnlgt4F1H8L7t3z95o3/KO+o78INEcXTbnoJQ/F2VqDVhWoaiVml/OEHv9HsVgxUaVW+IbiZPUJQfF/YxZw=="
+        crossorigin="anonymous"></script>
+    <script>
+        const test = "<p>&nbsp;</p>";
+        const card_name = [
+            "立<br><br>春",
+            "雨<br><br>水",
+            "驚<br><br>蟄",
+            "春<br><br>分",
+            "清<br><br>明",
+            "穀<br><br>雨",
+            "立<br><br>夏",
+            "小<br><br>滿",
+            "芒<br><br>種",
+            "夏<br><br>至",
+            "小<br><br>暑",
+            "大<br><br>暑",
+            "立<br><br>秋",
+            "處<br><br>暑",
+            "白<br><br>露",
+            "秋<br><br>分",
+            "寒<br><br>露",
+            "霜<br><br>降",
+            "立<br><br>冬",
+            "小<br><br>雪",
+            "大<br><br>雪",
+            "冬<br><br>至",
+            "小<br><br>寒",
+            "大<br><br>寒",
+
+            "春<br><br>節",
+            "迎神日",
+            "隔開日",
+            "人<br><br>日",
+            "上元節",
+            "春<br><br>社",
+            "上巳節",
+            "寒食節",
+            "清明節",
+            "端午節",
+            "天貺節",
+            "七<br><br>夕",
+            "中元節",
+            "中秋節",
+            "秋<br><br>社",
+            "重陽節",
+            "寒衣節",
+            "十成節",
+            "下元節",
+            "臘八節",
+            "尾<br><br>牙",
+            "冬至節",
+            "祭灶日",
+            "除<br><br>夕",
+        ];
+
+        const card_date = [
+            "02月04日",
+            "02月19日",
+            "03月06日",
+            "03月21日",
+            "04月05日",
+            "04月20日",
+            "05月06日",
+            "05月21日",
+            "06月06日",
+            "06月21日",
+            "07月07日",
+            "07月23日",
+            "08月08日",
+            "08月23日",
+            "09月08日",
+            "09月23日",
+            "10月08日",
+            "10月23日",
+            "11月07日",
+            "11月22日",
+            "12月07日",
+            "12月22日",
+            "01月06日",
+            "01月20日",
+
+            "01月01日",
+            "01月04日",
+            "01月05日",
+            "01月07日",
+            "01月15日",
+            "02月02日",
+            "03月03日",
+            "04月04日",
+            "04月05日",
+            "05月05日",
+            "06月06日",
+            "07月07日",
+            "07月15日",
+            "08月15日",
+            "08月16日",
+            "09月09日",
+            "10月01日",
+            "10月10日",
+            "10月15日",
+            "12月08日",
+            "12月16日",
+            "12月22日",
+            "12月24日",
+            "12月31日",
+        ];
+
+        let card_number = [
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+            19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+            35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48,
+        ];
+
+        const card_value = [
+            6, 12, 9, 6, 9, 6, 11, 8, 12, 9, 14, 12, 16, 13, 17, 14, 9, 6,
+            9, 6, 10, 7, 7, 3, 2, 5, 6, 8, 7, 4, 6, 8, 9, 10, 12, 14, 13,
+            14, 15, 18, 2, 2, 7, 11, 10, 7, 9, 6,
+        ];
+
+        const card_point = [
+            [2, 4],
+            [1, 2, 9],
+            [3, 6],
+            [1, 2, 3],
+            [4, 5],
+            [2, 4],
+            [5, 6],
+            [1, 2, 5],
+            [6, 6],
+            [1, 2, 6],
+            [7, 7],
+            [2, 3, 7],
+            [8, 8],
+            [2, 3, 8],
+            [8, 9],
+            [2, 3, 9],
+            [1, 8],
+            [1, 2, 3],
+            [1, 1, 7],
+            [1, 1, 2, 2],
+            [1, 2, 7],
+            [1, 2, 2, 2],
+            [1, 6],
+            [1, 2],
+            [1, 1],
+            [1, 4],
+            [1, 5],
+            [1, 7],
+            [1, 1, 5],
+            [2, 2],
+            [3, 3],
+            [4, 4],
+            [4, 5],
+            [5, 5],
+            [6, 6],
+            [7, 7],
+            [1, 5, 7],
+            [1, 5, 8],
+            [1, 6, 8],
+            [9, 9],
+            [1, 1],
+            [1, 1],
+            [1, 1, 5],
+            [1, 2, 8],
+            [1, 1, 2, 6],
+            [1, 2, 2, 2],
+            [1, 2, 2, 4],
+            [1, 1, 2, 3],
+        ];
+
+        var card_obj = [
+            {
+                name: " ",
+                date: " ",
+                number: " ",
+                value: " ",
+                point: [],
+            },
+            {
+                name: "立春",
+                date: "02月04日",
+                number: 1,
+                value: 6,
+                point: [2, 4],
+            },
+            {
+                name: "雨水",
+                date: "02月19日",
+                number: 2,
+                value: 12,
+                point: [1, 2, 9],
+            },
+            {
+                name: "驚蟄",
+                date: "03月06日",
+                number: 3,
+                value: 9,
+                point: [3, 6],
+            },
+            {
+                name: "春分",
+                date: "03月21日",
+                number: 4,
+                value: 6,
+                point: [1, 2, 3],
+            },
+            {
+                name: "清明",
+                date: "04月05日",
+                number: 5,
+                value: 9,
+                point: [4, 5],
+            },
+            {
+                name: "穀雨",
+                date: "04月20日",
+                number: 6,
+                value: 6,
+                point: [2, 4],
+            },
+            {
+                name: "立夏",
+                date: "05月06日",
+                number: 7,
+                value: 11,
+                point: [5, 6],
+            },
+            {
+                name: "小滿",
+                date: "05月21日",
+                number: 8,
+                value: 8,
+                point: [1, 2, 5],
+            },
+            {
+                name: "芒種",
+                date: "06月06日",
+                number: 9,
+                value: 12,
+                point: [6, 6],
+            },
+            {
+                name: "夏至",
+                date: "06月21日",
+                number: 10,
+                value: 9,
+                point: [1, 2, 6],
+            },
+            {
+                name: "小暑",
+                date: "07月07日",
+                number: 11,
+                value: 14,
+                point: [7, 7],
+            },
+            {
+                name: "大暑",
+                date: "07月23日",
+                number: 12,
+                value: 12,
+                point: [2, 3, 7],
+            },
+            {
+                name: "立秋",
+                date: "08月08日",
+                number: 13,
+                value: 16,
+                point: [8, 8],
+            },
+            {
+                name: "處暑",
+                date: "08月23日",
+                number: 14,
+                value: 13,
+                point: [2, 3, 8],
+            },
+            {
+                name: "白露",
+                date: "09月08日",
+                number: 15,
+                value: 17,
+                point: [8, 9],
+            },
+            {
+                name: "秋分",
+                date: "09月23日",
+                number: 16,
+                value: 14,
+                point: [2, 3, 9],
+            },
+            {
+                name: "寒露",
+                date: "10月08日",
+                number: 17,
+                value: 9,
+                point: [1, 8],
+            },
+            {
+                name: "霜降",
+                date: "10月23日",
+                number: 18,
+                value: 6,
+                point: [1, 2, 3],
+            },
+            {
+                name: "立冬",
+                date: "11月07日",
+                number: 19,
+                value: 9,
+                point: [1, 1, 7],
+            },
+            {
+                name: "小雪",
+                date: "11月22日",
+                number: 20,
+                value: 6,
+                point: [1, 1, 2, 2],
+            },
+            {
+                name: "大雪",
+                date: "12月07日",
+                number: 21,
+                value: 10,
+                point: [1, 2, 7],
+            },
+            {
+                name: "冬至",
+                date: "12月22日",
+                number: 22,
+                value: 7,
+                point: [1, 2, 2, 2],
+            },
+            {
+                name: "小寒",
+                date: "01月06日",
+                number: 23,
+                value: 7,
+                point: [1, 6],
+            },
+            {
+                name: "大寒",
+                date: "01月20日",
+                number: 24,
+                value: 3,
+                point: [1, 2],
+            },
+            {
+                name: "春節 ",
+                date: "01月01日",
+                number: 25,
+                value: 2,
+                point: [1, 1],
+            },
+            {
+                name: "迎神日",
+                date: "01月04日",
+                number: 26,
+                value: 5,
+                point: [1, 4],
+            },
+            {
+                name: "隔開日",
+                date: "01月05日",
+                number: 27,
+                value: 6,
+                point: [1, 5],
+            },
+            {
+                name: "人日	",
+                date: "01月07日",
+                number: 28,
+                value: 8,
+                point: [1, 7],
+            },
+            {
+                name: "上元節",
+                date: "01月15日",
+                number: 29,
+                value: 7,
+                point: [1, 1, 5],
+            },
+            {
+                name: "春社 ",
+                date: "02月02日",
+                number: 30,
+                value: 4,
+                point: [2, 2],
+            },
+            {
+                name: "上巳節",
+                date: "03月03日",
+                number: 31,
+                value: 6,
+                point: [3, 3],
+            },
+            {
+                name: "寒食節",
+                date: "04月04日",
+                number: 32,
+                value: 8,
+                point: [4, 4],
+            },
+            {
+                name: "清明節",
+                date: "04月05日",
+                number: 33,
+                value: 9,
+                point: [4, 5],
+            },
+            {
+                name: "端午節",
+                date: "05月05日",
+                number: 34,
+                value: 10,
+                point: [5, 5],
+            },
+            {
+                name: "天貺節",
+                date: "06月06日",
+                number: 35,
+                value: 12,
+                point: [6, 6],
+            },
+            {
+                name: "七夕 ",
+                date: "07月07日",
+                number: 36,
+                value: 14,
+                point: [7, 7],
+            },
+            {
+                name: "中元節",
+                date: "07月15日",
+                number: 37,
+                value: 13,
+                point: [1, 5, 7],
+            },
+            {
+                name: "中秋節",
+                date: "08月15日",
+                number: 38,
+                value: 14,
+                point: [1, 5, 8],
+            },
+            {
+                name: "秋社	",
+                date: "08月16日",
+                number: 39,
+                value: 15,
+                point: [1, 6, 8],
+            },
+            {
+                name: "重陽節",
+                date: "09月09日",
+                number: 40,
+                value: 18,
+                point: [9, 9],
+            },
+            {
+                name: "寒衣節",
+                date: "10月01日",
+                number: 41,
+                value: 2,
+                point: [1, 1],
+            },
+            {
+                name: "十成節",
+                date: "10月10日",
+                number: 42,
+                value: 2,
+                point: [1, 1],
+            },
+            {
+                name: "下元節",
+                date: "10月15日",
+                number: 43,
+                value: 7,
+                point: [1, 1, 5],
+            },
+            {
+                name: "臘八節",
+                date: "12月08日",
+                number: 44,
+                value: 11,
+                point: [1, 2, 8],
+            },
+            {
+                name: "尾牙 ",
+                date: "12月16日",
+                number: 45,
+                value: 10,
+                point: [1, 1, 2, 6],
+            },
+            {
+                name: "冬至節",
+                date: "12月22日",
+                number: 46,
+                value: 7,
+                point: [1, 2, 2, 2],
+            },
+            {
+                name: "祭灶日",
+                date: "12月24日",
+                number: 47,
+                value: 9,
+                point: [1, 2, 2, 4],
+            },
+            {
+                name: "除夕 ",
+                date: "12月31日",
+                number: 48,
+                value: 6,
+                point: [1, 1, 2, 3],
+            },
+        ];
+
+        let card_container = [];
+
+        var inGame = false;
+        // 有無在遊戲中
+        var nextRound = false;
+        // 下一輪
+        var flag = true;
+        // 有無抽過牌
+        var count = 0;
+        var includePublic = -1,
+            includePlayer = -1,
+            includeEnemy = -1,
+            includeDrawPlayer = -1,
+            includeDrawEnemy = -1;
+        var indexPublic = -1,
+            indexPlayer = -1,
+            indexEnemy = -1,
+            indexDrawPlayer = -1,
+            indexDrawEnemy = -1;
+        var turn = 0;
+        // 回合數
+
+        for (let i = 0; i < 48; i++) {
+            $("#game-cards").append(
+                `<div class="card card-clos">
+                    <div class="card-front"></div>
+                    <div class="card-back"></div>
+                    </div>`
+            );
+        }
+        // 決定每張的數字
+        $(".card").each(function (index) {
+            const number = index % 48;
+            $(this).find(".card-front").css({
+                // backgroundImage: `url("https://rogeraabbccdd.github.io/F2E-book/images/ch17/${number}S.jpg")`,
+                backgroundColor: "#ccc",
+                textAlign: "center",
+                fontSize: "30px",
+                lineHeight: "30px",
+                fontFamily: "標楷體",
+            }).html(`
+                ${card_name[number]}
+                `);
+            $(this).attr("data-number", number);
+        });
+
+        $("#start").on("click", function () {
+            // 遊戲開始按鈕
+            $(this).attr("disabled", !inGame);
+            // 把按鈕關掉
+            $(draw).attr("disabled", inGame);
+            $(check).attr("disabled", inGame);
+            $(fold).attr("disabled", inGame);
+            $(next).attr("disabled", inGame);
+            // 把其他按鈕打開
+            if (!inGame || nextRound) {
+                for (let i = 0; i < 1; i++) {
+                    const startDrawPublic = Math.round(
+                        Math.random() * 47 + 1
+                    );
+                    includePublic = card_number.includes(startDrawPublic);
+                    indexPublic = card_number.indexOf(startDrawPublic);
+                    if (includePublic) {
+                        card_container.push(card_number[indexPublic]);
+                        // 將卡牌從陣列放入空陣列
+                        if (indexPublic >= 0) {
+                            card_number.splice(indexPublic, 1, 0);
+                            // 從卡牌陣列刪除
+                            turn++;
+                            // 回合+1
+                        }
+                    } else if (!includePublic) {
+                        i--;
+                    }
+                    console.log(
+                        "Public",
+                        "第",
+                        startDrawPublic,
+                        "張卡",
+                        "有沒有",
+                        includePublic,
+                        "index=",
+                        indexPublic,
+                        "卡片點數=",
+                        card_point[indexPublic],
+                        "卡片數值=",
+                        card_value[indexPublic]
+                    );
+                    // 檢查數值
+                }
+                // 將卡牌從陣列取出放到空陣列(防止重複)(公共)
+
+                for (let i = 0; i < 1; i++) {
+                    const startDrawPlayer = Math.round(
+                        Math.random() * 47 + 1
+                    );
+                    includePlayer = card_number.includes(startDrawPlayer);
+                    indexPlayer = card_number.indexOf(startDrawPlayer);
+                    if (includePlayer) {
+                        card_container.push(card_number[indexPlayer]);
+                        // 將卡牌從陣列放入空陣列
+                        if (indexPlayer >= 0) {
+                            card_number.splice(indexPlayer, 1, 0);
+                            // 從卡牌陣列刪除
+                            turn++;
+                            // 回合+1
+                        }
+                    } else if (!includePlayer) {
+                        i--;
+                    }
+                    console.log(
+                        "Player",
+                        "第",
+                        startDrawPlayer,
+                        "張卡",
+                        "有沒有",
+                        includePlayer,
+                        "index=",
+                        indexPlayer,
+                        "卡片點數=",
+                        card_point[indexPlayer],
+                        "卡片數值=",
+                        card_value[indexPlayer]
+                    );
+                    // 檢查數值
+                }
+                // 將卡牌從陣列取出放到空陣列(防止重複)(玩家)
+
+                for (let i = 0; i < 1; i++) {
+                    const startDrawEnemy = Math.round(
+                        Math.random() * 47 + 1
+                    );
+                    includeEnemy = card_number.includes(startDrawEnemy);
+                    indexEnemy = card_number.indexOf(startDrawEnemy);
+                    if (includeEnemy) {
+                        card_container.push(card_number[indexEnemy]);
+                        // 將卡牌從陣列放入空陣列
+                        if (indexEnemy >= 0) {
+                            card_number.splice(indexEnemy, 1, 0);
+                            // 從卡牌陣列刪除
+                            turn++;
+                            // 回合+1
+                        }
+                    } else if (!includeEnemy) {
+                        i--;
+                    }
+                    console.log(
+                        "Enemy",
+                        "第",
+                        startDrawEnemy,
+                        "張卡",
+                        "有沒有",
+                        includeEnemy,
+                        "index=",
+                        indexEnemy,
+                        "卡片點數=",
+                        card_point[indexEnemy],
+                        "卡片數值=",
+                        card_value[indexEnemy]
+                    );
+                    // 檢查數值
+                }
+                // 將卡牌從陣列取出放到空陣列(防止重複)(敵人)
+
+                inGame = true;
+                flag = true;
+                // 沒抽過牌
+                // 預設開局抽一張，可再抽一張
+
+                $("#public-deck")
+                    .append(
+                        `<div class="card num${count}">
+                            <div class="card-front"></div>
+                            <div class="card-back"></div>
+                            </div>`
+                    )
+                    .children(`.num${count} `)
+                    .css({
+                        backgroundColor: "#ccc",
+                        textAlign: "center",
+                        fontSize: "30px",
+                        lineHeight: "30px",
+                        fontFamily: "標楷體",
+                    })
+                    .html(`${card_name[indexPublic]}`);
+                // 印出卡片到公共牌區
+
+                count++;
+                // 卡牌編號+1
+
+                $("#player-deck")
+                    .append(
+                        `<div class="card num${count}">
+                            <div class="card-front"></div>
+                            <div class="card-back"></div>
+                            </div>`
+                    )
+                    .children(`.num${count} `)
+                    .css({
+                        backgroundColor: "#ccc",
+                        textAlign: "center",
+                        fontSize: "30px",
+                        lineHeight: "30px",
+                        fontFamily: "標楷體",
+                    })
+                    .html(`${card_name[indexPlayer]}`);
+                // 印出卡片到玩家牌區
+
+                count++;
+                // 卡牌編號+1
+
+                $("#enemy-deck")
+                    .append(
+                        `<div class="card num${count}">
+                            <div class="card-front"></div>
+                            <div class="card-back"></div>
+                            </div>`
+                    )
+                    .children(`.num${count} `)
+                    .css({
+                        backgroundColor: "#ccc",
+                        textAlign: "center",
+                        fontSize: "30px",
+                        lineHeight: "30px",
+                        fontFamily: "標楷體",
+                    })
+                    .html(`${card_name[indexEnemy]}`);
+                // 印出卡片到敵人牌區
+
+                count++;
+                // 卡牌編號+1
+                console.log("回合數=", turn);
+                // 檢查回合
+            }
+        });
+
+        $("#draw").on("click", function () {
+            // 抽牌，玩
+            $(draw).attr("disabled", flag);
+            $(check).attr("disabled", flag);
+            $(fold).attr("disabled", flag);
+
+            if (inGame && flag) {
+                // 在遊戲中，且沒抽過牌
+                for (let i = 0; i < 1; i++) {
+                    const draw = Math.round(Math.random() * 47 + 1);
+                    // 第幾張(1~48)
+                    includeDrawPlayer = card_number.includes(draw);
+                    // 有沒有包含
+                    indexDrawPlayer = card_number.indexOf(draw);
+                    // 索引(0~47)
+                    console.log(
+                        "Player Draw",
+                        "第",
+                        draw,
+                        "張卡",
+                        "有沒有",
+                        includeDrawPlayer,
+                        "index=",
+                        indexDrawPlayer,
+                        "數值=",
+                        card_value[indexDrawPlayer]
+                    );
+                    // 檢查
+                    if (includeDrawPlayer) {
+                        card_container.push(card_number[indexDrawPlayer]);
+                        // 將卡牌從陣列放入空陣列
+                        if (indexDrawPlayer >= 0) {
+                            card_number.splice(indexDrawPlayer, 1, 0);
+                            // 從卡牌陣列刪除
+                        }
+                    } else if (!includeDrawPlayer) {
+                        i--;
+                    }
+                    turn++;
+                }
+                // 將卡牌從陣列取出放到空陣列(防止重複)
+
+                flag = false;
+                // 抽過牌
+
+                $("#player-deck")
+                    .append(
+                        `<div class="card card-clos num${count}">
+                        <div class="card-front"></div>
+                        <div class="card-back"></div>
+                        </div>`
+                    )
+                    .children(`.num${count} `)
+                    .css({
+                        backgroundColor: "#ccc",
+                        textAlign: "center",
+                        fontSize: "30px",
+                        lineHeight: "30px",
+                        fontFamily: "標楷體",
+                    })
+                    .html(`${card_name[indexDrawPlayer]}`);
+                // 印出卡片到玩家牌區
+
+                if (turn >= 0 && turn < 15) {
+                    if (
+                        calculateType3(indexPublic, indexPlayer, indexDrawPlayer).rank
+                        >= calculateType2(indexPublic, indexEnemy).rank
+                    ) {
+                        // 如果玩家多抽一張牌型比電腦沒抽還大或一樣(電腦抽牌)
+                        for (let i = 0; i < 1; i++) {
+                            const draw = Math.round(Math.random() * 47 + 1);
+                            // 第幾張(1~48)
+                            includeDrawEnemy = card_number.includes(draw);
+                            // 有沒有包含
+                            indexDrawEnemy = card_number.indexOf(draw);
+                            // 索引(0~47)
+                            console.log(
+                                "Enemy Draw",
+                                "第",
+                                draw,
+                                "張卡",
+                                "有沒有",
+                                includeDrawEnemy,
+                                "index=",
+                                indexDrawEnemy,
+                                "數值=",
+                                card_value[indexDrawEnemy]
+                            );
+                            // 檢查
+                            if (includeDrawEnemy) {
+                                card_container.push(
+                                    card_number[indexDrawEnemy]
+                                );
+                                // 將卡牌從陣列放入空陣列
+                                if (indexDrawEnemy >= 0) {
+                                    card_number.splice(indexDrawEnemy, 1, 0);
+                                    // 從卡牌陣列刪除
+                                }
+                            } else if (!includeDrawEnemy) {
+                                i--;
+                            }
+                            turn++;
+                        }
+                        $("#enemy-deck")
+                            .append(
+                                `<div class="card card-clos num${count}">
+                                <div class="card-front"></div>
+                                <div class="card-back"></div>
+                                </div>`
+                            )
+                            .children(`.num${count} `)
+                            .css({
+                                backgroundColor: "#ccc",
+                                textAlign: "center",
+                                fontSize: "30px",
+                                lineHeight: "30px",
+                                fontFamily: "標楷體",
+                            })
+                            .html(`${card_name[indexDrawEnemy]}`);
+                        // 印出卡片到敵人牌區
+
+                        if (
+                            calculateType3(indexPublic, indexPlayer, indexDrawPlayer).rank
+                            > calculateType3(indexPublic, indexEnemy, indexDrawEnemy).rank
+                        ) {
+                            console.log("玩家贏")
+                        } else if (
+                            calculateType3(indexPublic, indexPlayer, indexDrawPlayer).rank
+                            < calculateType3(indexPublic, indexEnemy, indexDrawEnemy).rank
+                        ) {
+                            console.log("電腦贏")
+                        } else if (
+                            calculateType3(indexPublic, indexPlayer, indexDrawPlayer).rank
+                            === calculateType3(indexPublic, indexEnemy, indexDrawEnemy).rank
+                        ) {
+                            // 判斷牌型的rank
+                            if (
+                                calculateType3(indexPublic, indexPlayer, indexDrawPlayer).mainValue
+                                > calculateType3(indexPublic, indexEnemy, indexDrawEnemy).mainValue
+                            ) {
+                                console.log("玩家贏")
+                            } else if (
+                                calculateType3(indexPublic, indexPlayer, indexDrawPlayer).mainValue
+                                < calculateType3(indexPublic, indexEnemy, indexDrawEnemy).mainValue
+                            ) {
+                                console.log("電腦贏")
+                            } else if (
+                                calculateType3(indexPublic, indexPlayer, indexDrawPlayer).mainValue
+                                === calculateType3(indexPublic, indexEnemy, indexDrawEnemy).mainValue
+                            ) {
+                                // 同 rank 比主要數字
+                                if (
+                                    calculateType3(indexPublic, indexPlayer, indexDrawPlayer).minorValue
+                                    > calculateType3(indexPublic, indexEnemy, indexDrawEnemy).minorValue
+                                ) {
+                                    console.log("玩家贏")
+                                } else if (
+                                    calculateType3(indexPublic, indexPlayer, indexDrawPlayer).minorValue
+                                    < calculateType3(indexPublic, indexEnemy, indexDrawEnemy).minorValue
+                                ) {
+                                    console.log("電腦贏")
+                                } else if (
+                                    calculateType3(indexPublic, indexPlayer, indexDrawPlayer).minorValue
+                                    === calculateType3(indexPublic, indexEnemy, indexDrawEnemy).minorValue
+                                ) {
+                                    console.log("平手")
+                                }
+                                // 同 rank、主要數字 比次要數字
+                            }
+                        }
+                    } else if (
+                        calculateType3(indexPublic, indexPlayer, indexDrawPlayer).rank
+                        < calculateType2(indexPublic, indexEnemy).rank
+                    ) {
+                        // 如果玩家多抽一張牌型比電腦沒抽還小(電腦不抽牌) 
+                        console.log("電腦贏")
+                    }
+                }
+                // 玩法一
+
+                if (turn >= 15 && turn < 30) {
+                    if (
+                        calculatePoint3(indexPublic, indexPlayer, indexDrawPlayer)
+                        >= calculatePoint2(indexPublic, indexEnemy)
+                        && calculatePoint3(indexPublic, indexPlayer, indexDrawPlayer)
+                        <= 16
+                    ) {
+                        // 如果玩家多抽一張點數比電腦沒抽還大或一樣且沒爆牌(電腦抽牌)
+                        for (let i = 0; i < 1; i++) {
+                            const draw = Math.round(Math.random() * 47 + 1);
+                            // 第幾張(1~48)
+                            includeDrawEnemy = card_number.includes(draw);
+                            // 有沒有包含
+                            indexDrawEnemy = card_number.indexOf(draw);
+                            // 索引(0~47)
+                            console.log(
+                                "Enemy Draw",
+                                "第",
+                                draw,
+                                "張卡",
+                                "有沒有",
+                                includeDrawEnemy,
+                                "index=",
+                                indexDrawEnemy,
+                                "數值=",
+                                card_value[indexDrawEnemy]
+                            );
+                            // 檢查
+                            if (includeDrawEnemy) {
+                                card_container.push(
+                                    card_number[indexDrawEnemy]
+                                );
+                                // 將卡牌從陣列放入空陣列
+                                if (indexDrawEnemy >= 0) {
+                                    card_number.splice(indexDrawEnemy, 1, 0);
+                                    // 從卡牌陣列刪除
+                                }
+                            } else if (!includeDrawEnemy) {
+                                i--;
+                            }
+                            turn++;
+                        }
+                        $("#enemy-deck")
+                            .append(
+                                `<div class="card card-clos num${count}">
+                                <div class="card-front"></div>
+                                <div class="card-back"></div>
+                                </div>`
+                            )
+                            .children(`.num${count} `)
+                            .css({
+                                backgroundColor: "#ccc",
+                                textAlign: "center",
+                                fontSize: "30px",
+                                lineHeight: "30px",
+                                fontFamily: "標楷體",
+                            })
+                            .html(`${card_name[indexDrawEnemy]}`);
+                        // 印出卡片到敵人牌區
+
+                        // calculatePoint3(indexPublic, indexEnemy, indexDrawEnemy);
+                        // 檢查
+                        if (
+                            calculatePoint3(indexPublic, indexPlayer, indexDrawPlayer)
+                            > calculatePoint3(indexPublic, indexEnemy, indexDrawEnemy)
+                            && calculatePoint3(indexPublic, indexPlayer, indexDrawPlayer)
+                            <= 16
+                        ) {
+                            // 玩家點數大且沒爆牌
+                            console.log("玩家贏");
+                        } else if (
+                            calculatePoint3(indexPublic, indexPlayer, indexDrawPlayer)
+                            < calculatePoint3(indexPublic, indexEnemy, indexDrawEnemy)
+                            && calculatePoint3(indexPublic, indexEnemy, indexDrawEnemy)
+                            <= 16
+                        ) {
+                            // 電腦點數大且沒爆牌
+                            console.log("電腦贏");
+                        } else if (
+                            calculatePoint3(indexPublic, indexPlayer, indexDrawPlayer)
+                            === calculatePoint3(indexPublic, indexEnemy, indexDrawEnemy)
+                            && calculatePoint3(indexPublic, indexPlayer, indexDrawPlayer)
+                            <= 16
+                            && calculatePoint3(indexPublic, indexEnemy, indexDrawEnemy)
+                            <= 16
+                        ) {
+                            // 雙方點數一樣且沒爆牌
+                            console.log("平手")
+                        }
+                    } else if (
+                        calculatePoint3(indexPublic, indexPlayer, indexDrawPlayer)
+                        < calculatePoint2(indexPublic, indexEnemy)
+                        && calculatePoint2(indexPublic, indexEnemy)
+                        <= 16
+                    ) {
+                        // 如果玩家多抽一張點數比電腦沒抽還小且沒爆牌(電腦不抽牌)
+                        console.log("電腦贏");
+                    } else if (
+                        calculatePoint3(indexPublic, indexPlayer, indexDrawPlayer)
+                        >= 16
+                    ) {
+                        // 玩家爆牌
+                        console.log("電腦贏")
+                    } else if (
+                        calculatePoint3(indexPublic, indexEnemy, indexDrawEnemy)
+                        >= 16
+                    ) {
+                        // 電腦爆牌
+                        console.log("玩家贏")
+                    }
+                }
+                // 玩法二
+            }
+            else if (inGame && !flag) {
+                // 遊戲中且抽過牌
+                console.log("抽過牌")
+                turn++;
+            }
+        });
+
+        $("#check").on("click", function () {
+            // 過牌，玩
+            $(draw).attr("disabled", flag);
+            $(check).attr("disabled", flag);
+            $(fold).attr("disabled", flag);
+
+            if (inGame && flag) {
+                // 在遊戲中，且沒抽過牌
+
+                if (turn >= 0 && turn < 15) {
+                    if (
+                        calculateType2(indexPublic, indexPlayer).rank
+                        >= calculateType2(indexPublic, indexEnemy).rank
+                    ) {
+                        // 如果玩家沒抽牌型比電腦沒抽還大或一樣(電腦抽牌)
+                        for (let i = 0; i < 1; i++) {
+                            const draw = Math.round(Math.random() * 47 + 1);
+                            // 第幾張(1~48)
+                            includeDrawEnemy = card_number.includes(draw);
+                            // 有沒有包含
+                            indexDrawEnemy = card_number.indexOf(draw);
+                            // 索引(0~47)
+                            console.log(
+                                "Enemy Draw",
+                                "第",
+                                draw,
+                                "張卡",
+                                "有沒有",
+                                includeDrawEnemy,
+                                "index=",
+                                indexDrawEnemy,
+                                "數值=",
+                                card_value[indexDrawEnemy]
+                            );
+                            // 檢查
+                            if (includeDrawEnemy) {
+                                card_container.push(
+                                    card_number[indexDrawEnemy]
+                                );
+                                // 將卡牌從陣列放入空陣列
+                                if (indexDrawEnemy >= 0) {
+                                    card_number.splice(indexDrawEnemy, 1, 0);
+                                    // 從卡牌陣列刪除
+                                }
+                            } else if (!includeDrawEnemy) {
+                                i--;
+                            }
+                            turn++;
+                        }
+                        $("#enemy-deck")
+                            .append(
+                                `<div class="card card-clos num${count}">
+                                <div class="card-front"></div>
+                                <div class="card-back"></div>
+                                </div>`
+                            )
+                            .children(`.num${count} `)
+                            .css({
+                                backgroundColor: "#ccc",
+                                textAlign: "center",
+                                fontSize: "30px",
+                                lineHeight: "30px",
+                                fontFamily: "標楷體",
+                            })
+                            .html(`${card_name[indexDrawEnemy]}`);
+                        // 印出卡片到敵人牌區
+
+                        if (
+                            calculateType2(indexPublic, indexPlayer).rank
+                            > calculateType3(indexPublic, indexEnemy, indexDrawEnemy).rank
+                        ) {
+                            console.log("玩家贏")
+                        } else if (
+                            calculateType2(indexPublic, indexPlayer).rank
+                            < calculateType3(indexPublic, indexEnemy, indexDrawEnemy).rank
+                        ) {
+                            console.log("電腦贏")
+                        } else if (
+                            calculateType2(indexPublic, indexPlayer).rank
+                            === calculateType3(indexPublic, indexEnemy, indexDrawEnemy).rank
+                        ) {
+                            // 判斷牌型的rank
+                            if (
+                                calculateType2(indexPublic, indexPlayer).mainValue
+                                > calculateType3(indexPublic, indexEnemy, indexDrawEnemy).mainValue
+                            ) {
+                                console.log("玩家贏")
+                            } else if (
+                                calculateType2(indexPublic, indexPlayer).mainValue
+                                < calculateType3(indexPublic, indexEnemy, indexDrawEnemy).mainValue
+                            ) {
+                                console.log("電腦贏")
+                            } else if (
+                                calculateType2(indexPublic, indexPlayer).mainValue
+                                === calculateType3(indexPublic, indexEnemy, indexDrawEnemy).mainValue
+                            ) {
+                                // 同 rank 比主要數字
+                                if (
+                                    calculateType2(indexPublic, indexPlayer).minorValue
+                                    > calculateType3(indexPublic, indexEnemy, indexDrawEnemy).minorValue
+                                ) {
+                                    console.log("玩家贏")
+                                } else if (
+                                    calculateType2(indexPublic, indexPlayer).minorValue
+                                    < calculateType3(indexPublic, indexEnemy, indexDrawEnemy).minorValue
+                                ) {
+                                    console.log("電腦贏")
+                                } else if (
+                                    calculateType2(indexPublic, indexPlayer).minorValue
+                                    === calculateType3(indexPublic, indexEnemy, indexDrawEnemy).minorValue
+                                ) {
+                                    console.log("平手")
+                                }
+                                // 同 rank、主要數字 比次要數字
+                            }
+                        }
+                    } else if (
+                        calculateType2(indexPublic, indexPlayer).rank
+                        < calculateType2(indexPublic, indexEnemy).rank
+                    ) {
+                        // 如果玩家沒抽牌型比電腦沒抽還小(電腦不抽牌) 
+                        console.log("電腦贏")
+                    }
+                }
+                // 玩法一
+
+                if (turn >= 15 && turn < 30) {
+                    if (
+                        calculatePoint2(indexPublic, indexPlayer)
+                        >= calculatePoint2(indexPublic, indexEnemy)
+                        && calculatePoint2(indexPublic, indexPlayer)
+                        <= 16
+                    ) {
+                        // 如果玩家沒抽點數比電腦沒抽還大或一樣且沒爆牌(電腦抽牌)
+                        for (let i = 0; i < 1; i++) {
+                            const draw = Math.round(Math.random() * 47 + 1);
+                            // 第幾張(1~48)
+                            includeDrawEnemy = card_number.includes(draw);
+                            // 有沒有包含
+                            indexDrawEnemy = card_number.indexOf(draw);
+                            // 索引(0~47)
+                            console.log(
+                                "Enemy Draw",
+                                "第",
+                                draw,
+                                "張卡",
+                                "有沒有",
+                                includeDrawEnemy,
+                                "index=",
+                                indexDrawEnemy,
+                                "數值=",
+                                card_value[indexDrawEnemy]
+                            );
+                            // 檢查
+                            if (includeDrawEnemy) {
+                                card_container.push(
+                                    card_number[indexDrawEnemy]
+                                );
+                                // 將卡牌從陣列放入空陣列
+                                if (indexDrawEnemy >= 0) {
+                                    card_number.splice(indexDrawEnemy, 1, 0);
+                                    // 從卡牌陣列刪除
+                                }
+                            } else if (!includeDrawEnemy) {
+                                i--;
+                            }
+                            turn++;
+                        }
+                        $("#enemy-deck")
+                            .append(
+                                `<div class="card card-clos num${count}">
+                                <div class="card-front"></div>
+                                <div class="card-back"></div>
+                                </div>`
+                            )
+                            .children(`.num${count} `)
+                            .css({
+                                backgroundColor: "#ccc",
+                                textAlign: "center",
+                                fontSize: "30px",
+                                lineHeight: "30px",
+                                fontFamily: "標楷體",
+                            })
+                            .html(`${card_name[indexDrawEnemy]}`);
+                        // 印出卡片到敵人牌區
+
+                        // calculatePoint3(indexPublic, indexEnemy, indexDrawEnemy);
+                        // 檢查
+                        if (
+                            calculatePoint2(indexPublic, indexPlayer)
+                            > calculatePoint3(indexPublic, indexEnemy, indexDrawEnemy)
+                            && calculatePoint2(indexPublic, indexPlayer)
+                            <= 16
+                        ) {
+                            // 玩家點數大且沒爆牌
+                            console.log("玩家贏");
+                        } else if (
+                            calculatePoint2(indexPublic, indexPlayer)
+                            < calculatePoint3(indexPublic, indexEnemy, indexDrawEnemy)
+                            && calculatePoint3(indexPublic, indexEnemy, indexDrawEnemy)
+                            <= 16
+                        ) {
+                            // 電腦點數大且沒爆牌
+                            console.log("電腦贏");
+                        } else if (
+                            calculatePoint2(indexPublic, indexPlayer)
+                            === calculatePoint3(indexPublic, indexEnemy, indexDrawEnemy)
+                            && calculatePoint2(indexPublic, indexPlayer)
+                            <= 16
+                            && calculatePoint3(indexPublic, indexEnemy, indexDrawEnemy)
+                            <= 16
+                        ) {
+                            // 雙方點數一樣且沒爆牌
+                            console.log("平手")
+                        }
+                    } else if (
+                        calculatePoint2(indexPublic, indexPlayer)
+                        < calculatePoint2(indexPublic, indexEnemy)
+                        && calculatePoint2(indexPublic, indexEnemy)
+                        <= 16
+                    ) {
+                        // 如果玩家沒抽點數比電腦沒抽還小且沒爆牌(電腦不抽牌)
+                        console.log("電腦贏");
+                    } else if (
+                        calculatePoint2(indexPublic, indexPlayer)
+                        >= 16
+                    ) {
+                        // 玩家爆牌
+                        console.log("電腦贏")
+                    } else if (
+                        calculatePoint3(indexPublic, indexEnemy, indexDrawEnemy)
+                        >= 16
+                    ) {
+                        // 電腦爆牌
+                        console.log("玩家贏")
+                    }
+                }
+                // 玩法二
+            } else if (inGame && flag) {
+                // 遊戲中且沒抽過牌
+                console.log("過過牌")
+                turn++;
+            }
+        });
+
+        $("#fold").on("click", function () {
+            // 棄牌，不玩
+            console.log("這局結束")
+
+            $(draw).attr("disabled", flag);
+            $(check).attr("disabled", flag);
+            $(fold).attr("disabled", flag);
+
+            if (turn >= 0 && turn < 15) {
+                console.log("盈");
+            } else if (turn >= 15 && turn < 30) {
+                console.log("虧");
+            }
+
+        });
+
+        $("#next").on("click", function () {
+            // 棄牌，不玩，下一局
+            flag = true;
+            nextRound = true;
+            card_container = [];
+            card_number = [
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+                35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48,
+            ];
+            $("#enemy-deck")
+                .html(`
+                <p>莊家牌</p>
+                `)
+            $("#public-deck")
+                .html(`
+                <p>公共牌</p>
+                `)
+            $("#player-deck")
+                .html(`
+                <p>玩家牌</p>
+                `)
+            // 重置
+
+            for (let i = 0; i < 1; i++) {
+                const startDrawPublic = Math.round(
+                    Math.random() * 47 + 1
+                );
+                includePublic = card_number.includes(startDrawPublic);
+                indexPublic = card_number.indexOf(startDrawPublic);
+                if (includePublic) {
+                    card_container.push(card_number[indexPublic]);
+                    // 將卡牌從陣列放入空陣列
+                    if (indexPublic >= 0) {
+                        card_number.splice(indexPublic, 1, 0);
+                        // 從卡牌陣列刪除
+                        turn++;
+                        // 回合+1
+                    }
+                } else if (!includePublic) {
+                    i--;
+                }
+                console.log(
+                    "Public",
+                    "第",
+                    startDrawPublic,
+                    "張卡",
+                    "有沒有",
+                    includePublic,
+                    "index=",
+                    indexPublic,
+                    "卡片點數=",
+                    card_point[indexPublic],
+                    "卡片數值=",
+                    card_value[indexPublic]
+                );
+                // 檢查數值
+            }
+            // 將卡牌從陣列取出放到空陣列(防止重複)(公共)
+
+            for (let i = 0; i < 1; i++) {
+                const startDrawPlayer = Math.round(
+                    Math.random() * 47 + 1
+                );
+                includePlayer = card_number.includes(startDrawPlayer);
+                indexPlayer = card_number.indexOf(startDrawPlayer);
+                if (includePlayer) {
+                    card_container.push(card_number[indexPlayer]);
+                    // 將卡牌從陣列放入空陣列
+                    if (indexPlayer >= 0) {
+                        card_number.splice(indexPlayer, 1, 0);
+                        // 從卡牌陣列刪除
+                        turn++;
+                        // 回合+1
+                    }
+                } else if (!includePlayer) {
+                    i--;
+                }
+                console.log(
+                    "Player",
+                    "第",
+                    startDrawPlayer,
+                    "張卡",
+                    "有沒有",
+                    includePlayer,
+                    "index=",
+                    indexPlayer,
+                    "卡片點數=",
+                    card_point[indexPlayer],
+                    "卡片數值=",
+                    card_value[indexPlayer]
+                );
+                // 檢查數值
+            }
+            // 將卡牌從陣列取出放到空陣列(防止重複)(玩家)
+
+            for (let i = 0; i < 1; i++) {
+                const startDrawEnemy = Math.round(
+                    Math.random() * 47 + 1
+                );
+                includeEnemy = card_number.includes(startDrawEnemy);
+                indexEnemy = card_number.indexOf(startDrawEnemy);
+                if (includeEnemy) {
+                    card_container.push(card_number[indexEnemy]);
+                    // 將卡牌從陣列放入空陣列
+                    if (indexEnemy >= 0) {
+                        card_number.splice(indexEnemy, 1, 0);
+                        // 從卡牌陣列刪除
+                        turn++;
+                        // 回合+1
+                    }
+                } else if (!includeEnemy) {
+                    i--;
+                }
+                console.log(
+                    "Enemy",
+                    "第",
+                    startDrawEnemy,
+                    "張卡",
+                    "有沒有",
+                    includeEnemy,
+                    "index=",
+                    indexEnemy,
+                    "卡片點數=",
+                    card_point[indexEnemy],
+                    "卡片數值=",
+                    card_value[indexEnemy]
+                );
+                // 檢查數值
+            }
+            // 將卡牌從陣列取出放到空陣列(防止重複)(敵人)
+
+            $("#public-deck")
+                .append(
+                    `<div class="card num${count}">
+                            <div class="card-front"></div>
+                            <div class="card-back"></div>
+                            </div>`
+                )
+                .children(`.num${count} `)
+                .css({
+                    backgroundColor: "#ccc",
+                    textAlign: "center",
+                    fontSize: "30px",
+                    lineHeight: "30px",
+                    fontFamily: "標楷體",
+                })
+                .html(`${card_name[indexPublic]}`);
+            // 印出卡片到公共牌區
+
+            count++;
+            // 卡牌編號+1
+
+            $("#player-deck")
+                .append(
+                    `<div class="card num${count}">
+                            <div class="card-front"></div>
+                            <div class="card-back"></div>
+                            </div>`
+                )
+                .children(`.num${count} `)
+                .css({
+                    backgroundColor: "#ccc",
+                    textAlign: "center",
+                    fontSize: "30px",
+                    lineHeight: "30px",
+                    fontFamily: "標楷體",
+                })
+                .html(`${card_name[indexPlayer]}`);
+            // 印出卡片到玩家牌區
+
+            count++;
+            // 卡牌編號+1
+
+            $("#enemy-deck")
+                .append(
+                    `<div class="card num${count}">
+                            <div class="card-front"></div>
+                            <div class="card-back"></div>
+                            </div>`
+                )
+                .children(`.num${count} `)
+                .css({
+                    backgroundColor: "#ccc",
+                    textAlign: "center",
+                    fontSize: "30px",
+                    lineHeight: "30px",
+                    fontFamily: "標楷體",
+                })
+                .html(`${card_name[indexEnemy]}`);
+            // 印出卡片到敵人牌區
+
+            count++;
+            // 卡牌編號+1
+            console.log("回合數=", turn);
+            // 檢查回合
+
+            // 初始化
+
+            $(draw).attr("disabled", !flag);
+            $(check).attr("disabled", !flag);
+            $(fold).attr("disabled", !flag);
+            $(next).attr("disabled", !nextRound);
+
+
+
+            if (turn >= 0 && turn < 15) {
+                console.log("盈");
+            } else if (turn >= 15 && turn < 30) {
+                console.log("虧");
+            }
+
+        });
+
+        const calculatePoint2 = (int1, int2) => {
+            let sum = 0;
+            console.log("第一張卡", card_value[int1]);
+            console.log("第二張卡", card_value[int2]);
+            for (let i = 0; i < 1; i++) {
+                sum += card_value[int1] + card_value[int2];
+            }
+            console.log("點數總和", sum);
+            return sum;
+        };
+        // 計算兩張牌點數(玩法二)
+
+        const calculatePoint3 = (int1, int2, int3) => {
+            let sum = 0;
+            console.log("第一張卡", card_value[int1]);
+            console.log("第二張卡", card_value[int2]);
+            console.log("第三張卡", card_value[int3]);
+            for (let i = 0; i < 1; i++) {
+                sum +=
+                    card_value[int1] + card_value[int2] + card_value[int3];
+            }
+            console.log("點數總和", sum);
+            return sum;
+        };
+        // 計算三張牌點數(玩法二)
+
+        const calculateType2 = (int1, int2) => {
+            const cards = [int1, int2];
+            const countNumber = Array(10).fill(0);
+            // 紀錄1~9數字出現次數([0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+
+            cards.forEach((idx) => {
+                card_point[idx].forEach((num) => {
+                    countNumber[num]++;
+                });
+            });
+            console.log(card_point[int1], card_point[int2]);
+            console.log(countNumber);
+            // 統計每張卡牌每個數字出現幾次(【數字的次數】)
+
+            const counts = {};
+            for (let i = 1; i < 10; i++) {
+                const count = countNumber[i];
+                if (count > 0) {
+                    if (!counts[count]) counts[count] = [];
+                    counts[count].push(i);
+                }
+            }
+            console.log("每個次數有哪些數字：counts=", counts);
+            // 統計每個次數各有哪些數字(次數：【數字】)
+
+            const unique = [];
+            for (let i = 1; i < 10; i++) {
+                if (countNumber[i] > 0) unique.push(i);
+            }
+            console.log("出現過的數字：unique=", unique);
+            // 出現過哪些數字(去掉出現次數0)
+
+            let isStraight = false;
+            if (unique.length >= 5) {
+                for (let i = 0; i <= unique.length - 5; i++) {
+                    if (
+                        unique[i + 4] - unique[i] === 4 &&
+                        unique
+                            .slice(i, i + 5)
+                            .every(
+                                (val, idx, arr) =>
+                                    idx === 0 || val - arr[idx - 1] === 1
+                            )
+                    ) {
+                        isStraight = true;
+                        break;
+                    }
+                }
+            }
+            // 判斷牌型：順子
+
+            const sortCard = (arr) => arr.sort((a, b) => b - a);
+            // 排序卡牌：由大到小
+
+            let cardRank = -1;
+            // 牌型數值
+            let rankName = "";
+            // 牌型名稱
+            let mainValue = -1;
+            // 同牌型主要數字
+            let minorValue = [];
+            // 同牌型次要數字
+
+            if (counts[8]) {
+                cardRank = 18;
+                rankName = "八條";
+                mainValue = counts[8][0];
+            } else if (counts[7]) {
+                cardRank = 17;
+                rankName = "七條";
+                mainValue = counts[7][0];
+            } else if (counts[6] && counts[2]) {
+                cardRank = 16;
+                rankName = "六條加二條";
+                mainValue = counts[6][0];
+                minorValue = counts[2];
+            } else if (counts[5] && counts[3]) {
+                cardRank = 15;
+                rankName = "五條加三條";
+                mainValue = counts[5][0];
+                minorValue = counts[3];
+            } else if (counts[4]?.length >= 2) {
+                cardRank = 14;
+                rankName = "兩個四條";
+                mainValue = Math.max(...counts[4]);
+                minorValue = [Math.min(...counts[4])];
+            } else if (counts[5] && counts[2]) {
+                cardRank = 13;
+                rankName = "五條加二條";
+                mainValue = counts[5][0];
+                minorValue = counts[2];
+            } else if (counts[4] && counts[3]) {
+                cardRank = 12;
+                rankName = "四條加三條";
+                mainValue = counts[4][0];
+                minorValue = counts[3];
+            } else if (counts[6]) {
+                cardRank = 11;
+                rankName = "六條";
+                mainValue = counts[6][0];
+            } else if (counts[4] && counts[2]) {
+                cardRank = 10;
+                rankName = "四條加二條";
+                mainValue = counts[4][0];
+                minorValue = counts[2];
+            } else if (counts[3]?.length >= 2) {
+                cardRank = 9;
+                rankName = "兩個三條";
+                mainValue = Math.max(...counts[3]);
+                minorValue = [Math.min(...counts[3])];
+            } else if (isStraight) {
+                cardRank = 8;
+                rankName = "順子";
+                mainValue = unique[unique.length - 1]; // 最尾數最大
+            } else if (counts[5]) {
+                cardRank = 7;
+                rankName = "五條";
+                mainValue = counts[5][0];
+            } else if (counts[3] && counts[2]) {
+                cardRank = 6;
+                rankName = "葫蘆";
+                mainValue = counts[3][0];
+                minorValue = counts[2];
+            } else if (counts[4]) {
+                cardRank = 5;
+                rankName = "四條";
+                mainValue = counts[4][0];
+                minorValue = sortCard(
+                    Object.keys(countNumber)
+                        .filter((k) => k != mainValue && countNumber[k] > 0)
+                        .map(Number)
+                );
+            } else if (counts[3]) {
+                cardRank = 4;
+                rankName = "三條";
+                mainValue = counts[3][0];
+                minorValue = sortCard(
+                    Object.keys(countNumber)
+                        .filter((k) => k != mainValue && countNumber[k] > 0)
+                        .map(Number)
+                );
+            } else if (counts[2]?.length >= 2) {
+                cardRank = 3;
+                rankName = "兩對";
+                const sortedPairs = sortCard(counts[2]);
+                mainValue = sortedPairs[0];
+                minorValue = [sortedPairs[1]];
+            } else if (counts[2]) {
+                cardRank = 2;
+                rankName = "一對";
+                mainValue = counts[2][0];
+                minorValue = sortCard(
+                    Object.keys(countNumber)
+                        .filter((k) => k != mainValue && countNumber[k] > 0)
+                        .map(Number)
+                );
+            } else {
+                cardRank = 1;
+                rankName = "雜牌";
+                mainValue = sortCard(unique)[0];
+                minorValue = sortCard(unique.slice(1));
+            }
+            // 牌型：
+            // 八條1 六條加二條3 五條加三條4 雙四條5
+            // 七條2 五條加二條6 四條加三條7
+            // 六條8 四條加二條9 雙三條10
+            // 五條11 葫蘆12
+            // 四條14 兩對16
+            // 三條15
+            // 一對17 順子13? 雜牌18
+
+            console.log(
+                "Rank=",
+                cardRank,
+                "牌型=",
+                rankName,
+                "最大點數",
+                mainValue,
+                "次大點數",
+                minorValue
+            );
+            return {
+                rank: cardRank,
+                name: rankName,
+                mainValue,
+                minorValue,
+            };
+        };
+        // 計算兩張牌牌型(玩法一)
+
+        const calculateType3 = (int1, int2, int3) => {
+            const cards = [int1, int2, int3];
+            const countNumber = Array(10).fill(0);
+            // 紀錄1~9數字出現次數([0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+
+            cards.forEach((idx) => {
+                card_point[idx].forEach((num) => {
+                    countNumber[num]++;
+                });
+            });
+            console.log(
+                card_point[int1],
+                card_point[int2],
+                card_point[int3]
+            );
+            console.log(countNumber);
+            // 統計每張卡牌每個數字出現幾次(【數字的次數】)
+
+            const counts = {};
+            for (let i = 1; i < 10; i++) {
+                const count = countNumber[i];
+                if (count > 0) {
+                    if (!counts[count]) counts[count] = [];
+                    counts[count].push(i);
+                }
+            }
+            console.log("每個次數有哪些數字：counts=", counts);
+            // 統計每個次數各有哪些數字(次數：【數字】)
+
+            const unique = [];
+            for (let i = 1; i < 10; i++) {
+                if (countNumber[i] > 0) unique.push(i);
+            }
+            console.log("出現過的數字：unique=", unique);
+            // 出現過哪些數字(去掉出現次數0)
+
+            let isStraight = false;
+            if (unique.length >= 5) {
+                for (let i = 0; i <= unique.length - 5; i++) {
+                    if (
+                        unique[i + 4] - unique[i] === 4 &&
+                        unique
+                            .slice(i, i + 5)
+                            .every(
+                                (val, idx, arr) =>
+                                    idx === 0 || val - arr[idx - 1] === 1
+                            )
+                    ) {
+                        isStraight = true;
+                        break;
+                    }
+                }
+            }
+            // 判斷牌型：順子
+
+            const sortCard = (arr) => arr.sort((a, b) => b - a);
+            // 排序卡牌：由大到小
+
+            let cardRank = -1;
+            // 牌型數值
+            let rankName = "";
+            // 牌型名稱
+            let mainValue = -1;
+            // 同牌型主要數字
+            let minorValue = [];
+            // 同牌型次要數字
+
+            if (counts[8]) {
+                cardRank = 18;
+                rankName = "八條";
+                mainValue = counts[8][0];
+            } else if (counts[7]) {
+                cardRank = 17;
+                rankName = "七條";
+                mainValue = counts[7][0];
+            } else if (counts[6] && counts[2]) {
+                cardRank = 16;
+                rankName = "六條加二條";
+                mainValue = counts[6][0];
+                minorValue = counts[2];
+            } else if (counts[5] && counts[3]) {
+                cardRank = 15;
+                rankName = "五條加三條";
+                mainValue = counts[5][0];
+                minorValue = counts[3];
+            } else if (counts[4]?.length >= 2) {
+                cardRank = 14;
+                rankName = "兩個四條";
+                mainValue = Math.max(...counts[4]);
+                minorValue = [Math.min(...counts[4])];
+            } else if (counts[5] && counts[2]) {
+                cardRank = 13;
+                rankName = "五條加二條";
+                mainValue = counts[5][0];
+                minorValue = counts[2];
+            } else if (counts[4] && counts[3]) {
+                cardRank = 12;
+                rankName = "四條加三條";
+                mainValue = counts[4][0];
+                minorValue = counts[3];
+            } else if (counts[6]) {
+                cardRank = 11;
+                rankName = "六條";
+                mainValue = counts[6][0];
+            } else if (counts[4] && counts[2]) {
+                cardRank = 10;
+                rankName = "四條加二條";
+                mainValue = counts[4][0];
+                minorValue = counts[2];
+            } else if (counts[3]?.length >= 2) {
+                cardRank = 9;
+                rankName = "兩個三條";
+                mainValue = Math.max(...counts[3]);
+                minorValue = [Math.min(...counts[3])];
+            } else if (isStraight) {
+                cardRank = 8;
+                rankName = "順子";
+                mainValue = unique[unique.length - 1]; // 最尾數最大
+            } else if (counts[5]) {
+                cardRank = 7;
+                rankName = "五條";
+                mainValue = counts[5][0];
+            } else if (counts[3] && counts[2]) {
+                cardRank = 6;
+                rankName = "葫蘆";
+                mainValue = counts[3][0];
+                minorValue = counts[2];
+            } else if (counts[4]) {
+                cardRank = 5;
+                rankName = "四條";
+                mainValue = counts[4][0];
+                minorValue = sortCard(
+                    Object.keys(countNumber)
+                        .filter((k) => k != mainValue && countNumber[k] > 0)
+                        .map(Number)
+                );
+            } else if (counts[3]) {
+                cardRank = 4;
+                rankName = "三條";
+                mainValue = counts[3][0];
+                minorValue = sortCard(
+                    Object.keys(countNumber)
+                        .filter((k) => k != mainValue && countNumber[k] > 0)
+                        .map(Number)
+                );
+            } else if (counts[2]?.length >= 2) {
+                cardRank = 3;
+                rankName = "兩對";
+                const sortedPairs = sortCard(counts[2]);
+                mainValue = sortedPairs[0];
+                minorValue = [sortedPairs[1]];
+            } else if (counts[2]) {
+                cardRank = 2;
+                rankName = "一對";
+                mainValue = counts[2][0];
+                minorValue = sortCard(
+                    Object.keys(countNumber)
+                        .filter((k) => k != mainValue && countNumber[k] > 0)
+                        .map(Number)
+                );
+            } else {
+                cardRank = 1;
+                rankName = "雜牌";
+                mainValue = sortCard(unique)[0];
+                minorValue = sortCard(unique.slice(1));
+            }
+            // 牌型：
+            // 八條1 六條加二條3 五條加三條4 雙四條5
+            // 七條2 五條加二條6 四條加三條7
+            // 六條8 四條加二條9 雙三條10
+            // 五條12 葫蘆13
+            // 四條14 兩對16
+            // 三條15
+            // 一對17 順子11(?) 雜牌18
+
+            console.log(
+                "Rank=",
+                cardRank,
+                "牌型=",
+                rankName,
+                "最大點數",
+                mainValue,
+                "次大點數",
+                minorValue
+            );
+            return {
+                rank: cardRank,
+                name: rankName,
+                mainValue,
+                minorValue,
+            };
+        };
+        // 計算三張牌牌型(玩法一)
+
+        const compareHands = (hand1, hand2) => {
+            if (hand1.rank > hand2.rank) return "Player 1 Win";
+            if (hand1.rank < hand2.rank) return "Player 2 Win";
+
+            // Rank 相同 → 比 mainValue
+            if (hand1.mainValue > hand2.mainValue) return "Player 1 Win";
+            if (hand1.mainValue < hand2.mainValue) return "Player 2 Win";
+
+            // mainValue 相同 → 比 minorValue
+            const len = Math.max(
+                hand1.minorValue.length,
+                hand2.minorValue.length
+            );
+            for (let i = 0; i < len; i++) {
+                const k1 = hand1.minorValue[i] || 0;
+                const k2 = hand2.minorValue[i] || 0;
+                if (k1 > k2) return "Player 1 Win";
+                if (k1 < k2) return "Player 2 Win";
+            }
+
+            return "Draw";
+        };
+        // 計算牌型(玩法一)
+
+        // 打亂
+        // for (let i = 0; i < 48; i++) {
+        //   const randomA = Math.round(Math.random() * 48);
+        //   const randomB = Math.round(Math.random() * 1);
+        //   $(".card").eq(randomA).insertAfter($(".card").eq(randomB));
+        // }
+
+        // 翻牌
+        // $("#game-cards").on("click", ".card", function () {
+        //   if (
+        //     // .card 沒有 .card-close 代表被翻開
+        //     // 如果已翻開數小於兩張
+        //     $(".card:not(.card-close)").length < 2 &&
+        //     // 且這張牌還沒翻開
+        //     $(this).hasClass("card-close") &&
+        //     // 這張牌還沒配對
+        //     !$(this).hasClass("card-ok")
+        //   ) {
+        //     $(this).removeClass("card-close");
+        //   }
+
+        //   // 如果翻開兩張了
+        //   if ($(".card:not(.card-close)").length === 2) {
+        //     // 如果兩張一樣
+        //     if (
+        //       $(".card:not(.card-close)").eq(0).attr("data-number") ===
+        //       $(".card:not(.card-close)").eq(1).attr("data-number")
+        //     ) {
+        //       $(".card:not(.card-close)").addClass("card-ok");
+        //       $(".card:not(.card-close)").fadeTo(1000, 0);
+        //     }
+
+        //     setTimeout(function () {
+        //       // 翻回來
+        //       $(".card:not(.card-close)").addClass("card-close");
+        //       // 過關判斷
+        //       if ($(".card-ok").length === $(".card").length) {
+        //         alert("過關");
+        //       }
+        //     }, 1000);
+        //   }
+        // });
+        // https://hackmd.io/@kChen/ryC8LaX6B
+    </script>
+    <script>
+        // 月亮部分
+
+        let phase = "";
+        // 月相名稱
+
+        const Moon = () => {
+            if (turn >= 0 && turn <= 14) {
+                if (turn === 0) {
+                    phase = "新月(朔月) new moon";
+                    printMoon(turn, phase);
+                }
+                if (turn >= 1 && turn <= 6) {
+                    phase = "眉月 waxing crescent";
+                    printMoon(turn, phase);
+                }
+                if (turn === 7) {
+                    phase = "上弦月 first quarter";
+                    printMoon(turn, phase);
+                }
+                if (turn >= 8 && turn <= 13) {
+                    phase = "盈凸月 waxing gibbous";
+                    printMoon(turn, phase);
+                }
+                if (turn === 14) {
+                    phase = "滿月(望月) full moon";
+                    printMoon(turn, phase);
+                }
+            } else if (turn >= 15 && turn <= 28) {
+                if (turn >= 15 && turn <= 20) {
+                    phase = "虧凸月 waning gibbous";
+                    printMoon2(turn, phase);
+                }
+                if (turn === 21) {
+                    phase = "下弦月 last quarter";
+                    printMoon2(turn, phase);
+                }
+                if (turn >= 22 && turn <= 28) {
+                    phase = "殘月 waning crescent";
+                    printMoon2(turn, phase);
+                }
+            } else if (turn >= 29) {
+                turn -= 29;
+                phase = "新月(朔月) new moon";
+                console.log(turn, phase);
+            }
+        };
+        // 判斷月相(回合)
+
+        function printMoon(i, phase) {
+            console.log(i, phase);
+            $("#moon").html(
+                `<moon-phase illumination="
+                    ${(i / 14) * 100}" 
+                    phase="${phase}">
+                    </moon-phase>
+                    <small>${phase}<br />
+                    </small>`
+            );
+        }
+        // 新月到滿月(盈，朔到望)
+
+        function printMoon2(i, phase) {
+            console.log(i, phase);
+            $("#moon").html(
+                `<moon-phase illumination="
+                    ${(2 - i / 14) * 100}" 
+                    phase="${phase}">
+                    </moon-phase>
+                    <small>${phase}<br />
+                    </small>`
+            );
+        }
+        // 滿月到新月(虧，望到朔)
+
+        setInterval(Moon, 1000);
+        Moon();
+        // 月亮部分
+    </script>
+    <!-- 
+         1 6 1 6 1 6 1 7(6)
+          新月(朔)   1   new moon
+          眉月       2~7    waxing crescent
+          上弦月     8      first quarter
+          盈凸月     9~14   waxing gibbous
+          滿月(望)   15     full moon
+          虧凸月     16~21  waning gibbous
+          下弦月     22     last quarter
+          殘月       23~29(8)  waning crescent
+          2~14 type1(wax) 16~29 type2(wan)
+    -->
+</body>
+
+</html>
